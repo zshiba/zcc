@@ -15,6 +15,16 @@
 * rsp
 * rcx
 
+(memo IA-32)
+* eax: accumulator
+* ebx: base register
+* ecx: count register
+* edx: data register
+* esi: source index
+* edi: destination index
+* ebp: base pointer
+* esp: stack pointer
+
 ### Instractions
 * `#` (comment line)
 * `.intel_syntax noprefix` (Add this at the top to specify the Intel syntax is used.)
