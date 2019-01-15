@@ -8,6 +8,9 @@ zcc: ${OBJECTS}
 
 ${OBJECTS}: zcc.h
 
-.PHONY: clean
+.PHONY: test clean
+test: zcc
+	./test.sh
+
 clean:
-	rm -f ./zcc ./*.o
+	rm -f ./zcc ./*.o temp*
