@@ -25,15 +25,30 @@
 * ebp: base pointer
 * esp: stack pointer
 
-### Instractions
+### Instractions (NEED CHECK)
 * `#` (comment line)
 * `.intel_syntax noprefix` (Add this at the top to specify the Intel syntax is used.)
-* add
-* sub
-* mov
-* call
-* ret
+* add r1, r2: add r2 to r1 and store the result in r1
+* sub r1, r2: subtract r2 from r1 and store the result in r1
+* mul r: multiply r by rax and store the result in rax
+* div r: divide concatination(rdx, rax) by r and store the result in rax
+* mov r1, r2: load r2 to r1
+* mov r, v: load v to r
+* call s: invoke s
+* ret v: return v
+* push v: push v to the stack
+* pop r: pop the value from the stack and store it in r
 
+### Emulating stack machine
+example: v1 + v2
+```
+push v1
+push v2
+pop rdi
+pop rax
+add rax, rdi
+push rax
+```
 
 ## Shell
 ```
