@@ -11,8 +11,7 @@
 * rsi: store the second argument for a function call
 * rdx: store the third argument for a function call
 * rip: program counter
-* rbp
-* rsp
+* rbp: base pointer
 * rcx
 
 (memo IA-32)
@@ -48,6 +47,20 @@ pop rdi
 pop rax
 add rax, rdi
 push rax
+```
+
+### Function frame
+prologue
+```
+push rbp
+mov rbp, rsp
+sub rsp, n (where n is the total size of local variables in byte)
+```
+epilogue
+```
+mov rsp, rbp
+pop rbp
+ret
 ```
 
 ## Shell
