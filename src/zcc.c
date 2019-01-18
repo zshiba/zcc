@@ -1,9 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdnoreturn.h>
 #include <ctype.h>
 #include "zcc.h"
 
-void error(char* format, char* input){
+noreturn void error(char* format, char* input){
   fprintf(stderr, format, input);
   exit(1);
 }
@@ -33,6 +34,7 @@ void vector_push(Vector* v, void* element){
 
 enum{
   TOKEN_NUMBER = 256, //to avoid these overlapping ascii table
+  TOKEN_IDENTIFIER,
   TOKEN_EOF
 };
 
@@ -52,42 +54,55 @@ Token* new_token(int type, int value, char* input){
 
 Vector* tokens = NULL; //ad-hoc, still in global
 int position = 0;  //ad-hoc, the index of current charactor in the given source
+Vector* code = NULL; //ad-hoc, to store a sequence of statements
 
-void tokenize(char* p){
+Vector* tokenize(char* p){
+  Vector* v = new_vector();
   while((*p) != '\0'){
     if(isspace((*p))){
       ++p;
-    }else if((*p) == '+' || (*p) == '-' || (*p) == '*' || (*p) == '/' || (*p) == '(' || (*p) == ')'){
+    }else if('a' <= (*p) && (*p) <= 'z'){
+      Token* token = new_token(TOKEN_IDENTIFIER, (*p), p);
+      vector_push(v, token);
+      ++p;
+    }else if((*p) == '+' || (*p) == '-' ||
+             (*p) == '*' || (*p) == '/' ||
+             (*p) == '(' || (*p) == ')' ||
+             (*p) == ';' || (*p) == '='){
       Token* token = new_token((*p), 0, p);
-      vector_push(tokens, token);
+      vector_push(v, token);
       ++p;
     }else if(isdigit((*p))){
       Token* token = new_token(TOKEN_NUMBER, strtol(p, &p, 10), p);
-      vector_push(tokens, token);
+      vector_push(v, token);
     }else{
       fprintf(stderr, "(Error) Failure to tokenize: '%s'\n", p);
       exit(1);
     }
   }
   Token* token = new_token(TOKEN_EOF, 0, p);
-  vector_push(tokens, token);
+  vector_push(v, token);
+  return v;
 }
 
 enum{
-  NODE_NUMBER = 256
+  NODE_NUMBER = 256,
+  NODE_IDENTIFIER
 };
 
 typedef struct Node{
   int type;
-  int value;
+  int value; //for NODE_NUMBER
+  char name; //for NODE_IDENTIFIER
   struct Node* lhs;
   struct Node* rhs;
 }Node;
 
-Node* new_node(int type, int value, Node* lhs, Node* rhs){
+Node* new_node(int type, int value, char name, Node* lhs, Node* rhs){
   Node* node = malloc(sizeof(Node));
   node->type = type;
   node->value = value;
+  node->name = name;
   node->lhs = lhs;
   node->rhs = rhs;
   return node;
@@ -112,7 +127,11 @@ Node* term(){
     else
       error("(Error) No closing parenthesis: %s\n", ((Token*)tokens->data[position])->input);
   }else if(((Token*)tokens->data[position])->type == TOKEN_NUMBER){
-    Node* newbie = new_node(NODE_NUMBER, ((Token*)tokens->data[position])->value, NULL, NULL);
+    Node* newbie = new_node(NODE_NUMBER, ((Token*)tokens->data[position])->value, '0', NULL, NULL);
+    ++position;
+    return newbie;
+  }else if(((Token*)tokens->data[position])->type == TOKEN_IDENTIFIER){
+    Node* newbie = new_node(NODE_IDENTIFIER, 0, ((Token*)tokens->data[position])->value, NULL, NULL);
     ++position;
     return newbie;
   }else{
@@ -124,9 +143,9 @@ Node* multiply(){
   Node* node = term();
   for(;;){
     if(consume('*'))
-      node = new_node('*', 0, node, term());
+      node = new_node('*', 0, '0', node, term());
     else if(consume('/'))
-      node = new_node('/', 0, node, term());
+      node = new_node('/', 0, '0', node, term());
     else
       return node;
   }
@@ -136,17 +155,70 @@ Node* add(){
   Node* node = multiply();
   for(;;){
     if(consume('+'))
-      node = new_node('+', 0, node, multiply());
+      node = new_node('+', 0, '0', node, multiply());
     else if(consume('-'))
-      node = new_node('-', 0, node, multiply());
+      node = new_node('-', 0, '0', node, multiply());
     else
       return node;
+  }
+}
+
+Node* assignment(){
+  Node* node = add();
+  if(consume('='))
+    return new_node('=', 0, '0', node, add());
+  else
+    return node;
+}
+
+Node* statement(){
+  Node* node = assignment();
+  if(consume(';'))
+    return node;
+  else
+    error("(Error) ';' is expected: %s\n", ((Token*)tokens->data[position])->input);
+}
+
+Vector* program(){
+  Vector* code = new_vector();
+  while(((Token*)tokens->data[position])->type != TOKEN_EOF){
+    Node* node = statement();
+    vector_push(code, node);
+  }
+  return code;
+}
+
+void generate_lvalue(Node* node){
+  if(node->type != NODE_IDENTIFIER){
+    error("(Error) variable name is expected\n", "");
+  }else{
+    int offset = ('z' - node->name + 1) * 8;
+    printf("  mov rax, rbp\n");
+    printf("  sub rax, %d\n", offset);
+    printf("  push rax\n");
   }
 }
 
 void generate(Node* node){
   if(node->type == NODE_NUMBER){
     printf("  push %d\n", node->value);
+
+  }else if(node->type == NODE_IDENTIFIER){
+    generate_lvalue(node);
+
+    printf("  pop rax\n");
+    printf("  mov rax, [rax]\n");
+    printf("  push rax\n");
+
+  }else if(node->type == '='){
+    generate_lvalue(node->lhs);
+    generate(node->rhs);
+
+    printf("  pop rdi\n");
+    printf("  pop rax\n");
+    printf("  mov [rax], rdi\n");
+    printf("  push rdi\n");
+
   }else{
     generate(node->lhs);
     generate(node->rhs);
@@ -177,12 +249,21 @@ void generate(Node* node){
   }
 }
 
+
 //for debug
-void print(Node* node){
+void print_tokens(){
+  fprintf(stderr, "--- print takens start\n");
+  for(int i = 0; i < tokens->length; i++)
+    fprintf(stderr, "type: %d, value: %d\n", ((Token*)tokens->data[i])->type, ((Token*)tokens->data[i])->value);
+  fprintf(stderr, "--- print takens end\n");
+}
+
+//for debug
+void print_node(Node* node){
   if(node != NULL){
-    fprintf(stderr, "%d %d\n", node->type, node->value);
-    print(node->lhs);
-    print(node->rhs);
+    fprintf(stderr, "type: %d, value: %d, name: %c\n", node->type, node->value, node->name);
+    print_node(node->lhs);
+    print_node(node->rhs);
   }
 }
 
@@ -192,21 +273,29 @@ int main(int argc, char* argv[]){
     return 1;
   }else{
 
-    tokens = new_vector();
-    tokenize(argv[1]);
-//for(int i = 0; i < 100; i++)
-//  fprintf(stderr, "%d %d\n", tokens[i].type, tokens[i].value);
-
-    Node* node = add();
-//print(node);
+    tokens = tokenize(argv[1]);
+//print_tokens();
+    code = program();
 
     printf(".intel_syntax noprefix\n");
     printf(".global _main\n");
     printf("_main:\n");
 
-    generate(node);
+    //prologue
+    printf("  push rbp\n");
+    printf("  mov rbp, rsp\n");
+    printf("  sub rsp, 208\n"); //ad-hoc, 208 (= 26 charactors * 8), a to z
 
-    printf("  pop rax\n"); //expect that the return value is on top of the stack
+    for(int i = 0; i < code->length; i++){
+      Node* node = code->data[i];
+//print_node(node);
+      generate(node);
+      printf("  pop rax\n");
+    }
+
+    //epilogue
+    printf("  mov rsp, rbp\n");
+    printf("  pop rbp\n");
     printf("  ret\n");
     return 0;
   }
