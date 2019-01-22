@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdnoreturn.h>
 #include <ctype.h>
+#include <string.h>
 #include "zcc.h"
 
 noreturn void error(char* format, char* input){
@@ -30,6 +31,35 @@ void vector_push(Vector* v, void* element){
   }
   v->data[v->length] = element;
   v->length = v->length + 1;
+}
+
+//Note: design choice, allow to put duplicated keys, but restrict to get only the value associated with the latest key
+typedef struct{
+  Vector* keys;
+  Vector* values;
+}Map;
+
+Map* new_map(){
+  Map* map = malloc(sizeof(Map));
+  map->keys = new_vector();
+  map->values = new_vector();
+  return map;
+}
+
+void map_put(Map* map, char* key, void* value){
+  vector_push(map->keys, key);
+  vector_push(map->values, value);
+}
+
+void* map_get(Map* map, char* key){
+  void* value = NULL;
+  for(int i = map->keys->length - 1; i >= 0; i--){
+    if(strcmp(map->keys->data[i], key) == 0){
+      value = map->values->data[i];
+      break;
+    }
+  }
+  return value;
 }
 
 enum{
